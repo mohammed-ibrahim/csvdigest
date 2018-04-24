@@ -6,6 +6,8 @@ from whoosh.index import create_in
 from whoosh.fields import *
 from whoosh.qparser import QueryParser
 import uuid
+import signal
+
 
 log = logging.getLogger(__name__)
 
@@ -92,14 +94,14 @@ def perform_search(headers, index_doc, query):
     value = parts[1]
 
     with index_doc.searcher() as searcher:
-        qp = QueryParser("content", schema=index_doc.schema)
+        qp = QueryParser(field, schema=index_doc.schema)
         q = qp.parse(unicode(value))
         results = searcher.search(q)
 
         log.info("Total results: %d", len(results))
 
         for result in results:
-            log.info(str(result))
+            log.info(str(result[headers[0]]))
 
     return None
 
@@ -120,6 +122,7 @@ def iterative_search(headers, index_doc):
         if query == "desc":
             with index_doc.searcher() as searcher:
                 for header in headers:
+                    log.info("Values for: %s", header)
                     log.info(list(searcher.lexicon(header)))
             continue
 
@@ -127,6 +130,9 @@ def iterative_search(headers, index_doc):
 
     return None
 
+def signal_handler(signal, frame):
+    print 'Exiting...'
+    sys.exit(0)
 
 # ___________       __
 # \_   _____/ _____/  |________ ___.__.
@@ -139,6 +145,8 @@ if __name__ == "__main__":
         print("Usage: python csv_open.py file_name.csv")
         sys.exit(1)
 
+    # Signal handler
+    signal.signal(signal.SIGINT, signal_handler)
     setup_logging()
 
     input_file_name = sys.argv[1]
