@@ -4,6 +4,7 @@ import sys
 import logging
 from whoosh.index import create_in
 from whoosh.fields import *
+from whoosh.qparser import QueryParser
 import uuid
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,28 @@ def index_csv_file(reader):
     log.info("Documents added: %d", num_documents)
     return (headers, index_doc)
 
+#   _________                           .__         _____  .__
+#  /   _____/ ____ _____ _______   ____ |  |__     /  _  \ |  |    ____   ____
+#  \_____  \_/ __ \\__  \\_  __ \_/ ___\|  |  \   /  /_\  \|  |   / ___\ /  _ \
+#  /        \  ___/ / __ \|  | \/\  \___|   Y  \ /    |    \  |__/ /_/  >  <_> )
+# /_______  /\___  >____  /__|    \___  >___|  / \____|__  /____/\___  / \____/
+#         \/     \/     \/            \/     \/          \/     /_____/
+def perform_search(headers, index_doc, query):
+    parts = query.split(" ", 1)
+    field = parts[0]
+    value = parts[1]
+
+    with index_doc.searcher() as searcher:
+        qp = QueryParser("content", schema=index_doc.schema)
+        q = qp.parse(unicode(value))
+        results = searcher.search(q)
+
+        log.info("Total results: %d", len(results))
+
+        for result in results:
+            log.info(str(result))
+
+    return None
 
 # .___        __                              __  .__
 # |   | _____/  |_  ________________    _____/  |_|__| ____   ____
@@ -93,6 +116,14 @@ def iterative_search(headers, index_doc):
         if query == "exit":
             log.info("Bye..")
             break
+
+        if query == "desc":
+            with index_doc.searcher() as searcher:
+                for header in headers:
+                    log.info(list(searcher.lexicon(header)))
+            continue
+
+        perform_search(headers, index_doc, query)
 
     return None
 
@@ -114,6 +145,7 @@ if __name__ == "__main__":
 
     headers = None
     index_doc = None
+    schema = None
     with open(input_file_name, 'rb') as file_pointer:
         reader = csv.reader(file_pointer)
         (headers, index_doc) = index_csv_file(reader)
