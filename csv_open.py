@@ -7,6 +7,7 @@ from whoosh.fields import *
 from whoosh.qparser import QueryParser
 import uuid
 import signal
+import enum
 
 
 log = logging.getLogger(__name__)
@@ -82,6 +83,67 @@ def index_csv_file(reader):
     log.info("Documents added: %d", num_documents)
     return (headers, index_doc)
 
+
+# ________                                  _____                .__
+# \_____  \  __ __   ___________ ___.__.   /  _  \   ____ _____  |  | ___.__.________ ___________
+#  /  / \  \|  |  \_/ __ \_  __ <   |  |  /  /_\  \ /    \\__  \ |  |<   |  |\___   // __ \_  __ \
+# /   \_/.  \  |  /\  ___/|  | \/\___  | /    |    \   |  \/ __ \|  |_\___  | /    /\  ___/|  | \/
+# \_____\ \_/____/  \___  >__|   / ____| \____|__  /___|  (____  /____/ ____|/_____ \\___  >__|
+#        \__>           \/       \/              \/     \/     \/     \/           \/    \/
+
+class Operation(enum.Enum):
+    EXIT = 1
+    SHOW_FIELDS = 2
+    ALL_TERMS = 3
+    TERMS = 4
+    GEN_QUERY = 5
+    NONE = 6
+    ERROR = 7
+
+class QueryAnalyzer():
+
+    _successful = False
+    _operation = None
+    _params = []
+    _q = None
+    _message = None
+
+    def __init__(self, query):
+        self._q = query
+        self.analyze(query)
+
+    def param(self, index):
+        return self._params[index]
+
+    def analyze(self, original_query):
+        query = original_query.lower().strip()
+
+        if query == "exit":
+            self._operation = Operation.EXIT
+
+        elif query == "desc":
+            self._operation = Operation.SHOW_FIELDS
+
+        elif query == "all_terms":
+            self._operation = Operation.ALL_TERMS
+
+        elif query.startswith("terms"):
+            self._operation = Operation.TERMS
+            parts = query.split(" ")
+            if len(parts) != 2:
+                self._operation = Operation.ERROR
+                self._message = "Usage: terms field_name"
+            else:
+                self._params = parts
+
+        elif query == "":
+            self._operation = Operation.NONE
+
+        else:
+            self._operation = Operation.GEN_QUERY
+            self._params = query.split(" ")
+
+
 #   _________                           .__         _____  .__
 #  /   _____/ ____ _____ _______   ____ |  |__     /  _  \ |  |    ____   ____
 #  \_____  \_/ __ \\__  \\_  __ \_/ ___\|  |  \   /  /_\  \|  |   / ___\ /  _ \
@@ -101,7 +163,8 @@ def perform_search(headers, index_doc, query):
         log.info("Total results: %d", len(results))
 
         for result in results:
-            log.info(str(result[headers[0]]))
+            for header in headers:
+                log.info(str(result[header]))
 
     return None
 
@@ -114,26 +177,47 @@ def perform_search(headers, index_doc, query):
 def iterative_search(headers, index_doc):
 
     while True:
-        query = raw_input("Enter query: ")
-        if query == "exit":
+        user_input = raw_input("Enter query: ")
+        parsed_query = QueryAnalyzer(user_input)
+        log.info("Operation: %s", str(parsed_query._operation))
+        log.info("")
+
+        if parsed_query._operation == Operation.EXIT:
             log.info("Bye..")
             break
 
-        if query == "desc":
+        if parsed_query._operation == Operation.SHOW_FIELDS:
+            for header in headers:
+                log.info(header)
+            continue
+
+        if parsed_query._operation == Operation.ALL_TERMS:
             with index_doc.searcher() as searcher:
                 for header in headers:
                     log.info("Values for: %s", header)
                     log.info(list(searcher.lexicon(header)))
             continue
 
-        perform_search(headers, index_doc, query)
+        if parsed_query._operation == Operation.NONE:
+            continue
+
+        if parsed_query._operation == Operation.ERROR:
+            log.info(parsed_query._message)
+            continue
+
+        if parsed_query._operation == Operation.TERMS:
+            with index_doc.searcher() as searcher:
+                log.info("Values for: %s", parsed_query.param(1))
+                log.info(list(searcher.lexicon(parsed_query.param(1))))
+            continue
+
+        perform_search(headers, index_doc, parsed_query._q)
 
     return None
 
 def signal_handler(signal, frame):
     print 'Exiting...'
     sys.exit(0)
-
 # ___________       __
 # \_   _____/ _____/  |________ ___.__.
 #  |    __)_ /    \   __\_  __ <   |  |
