@@ -35,7 +35,7 @@ def add_record(index_writer, headers, row):
 
     for i in range(len(headers)):
         if row[i].strip():
-            document[headers[i]] = unicode(row[i])
+            document[headers[i]] = row[i].decode("utf-8")
 
     # print(str(document))
     index_writer.add_document(**document)
@@ -164,8 +164,10 @@ def perform_search(headers, index_doc, query):
 
         for result in results:
             for header in headers:
-                log.info(str(result[header]))
-
+                if header in result:
+                    log.info("%s: %s", header, str(result[header]))
+                else:
+                    log.info("%s: NA", header)
     return None
 
 # .___        __                              __  .__
