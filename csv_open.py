@@ -8,6 +8,7 @@ from whoosh.qparser import QueryParser
 import uuid
 import signal
 import enum
+import readline
 
 
 log = logging.getLogger(__name__)
@@ -160,14 +161,16 @@ def perform_search(headers, index_doc, query):
         q = qp.parse(unicode(value))
         results = searcher.search(q)
 
-        log.info("Total results: %d", len(results))
-
         for result in results:
             for header in headers:
                 if header in result:
                     log.info("%s: %s", header, str(result[header]))
                 else:
                     log.info("%s: NA", header)
+
+
+        log.info("Total results: %d\n", len(results))
+
     return None
 
 # .___        __                              __  .__
