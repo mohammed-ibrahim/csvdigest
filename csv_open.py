@@ -5,10 +5,12 @@ import logging
 from whoosh.index import create_in
 from whoosh.fields import *
 from whoosh.qparser import QueryParser
+import whoosh.index as index
 import uuid
 import signal
 import enum
 import readline
+import hashlib
 
 
 log = logging.getLogger(__name__)
@@ -49,12 +51,14 @@ def add_record(index_writer, headers, row):
 #  |    |   \  |  /  |  |__/ /_/ |  |  |   |  \/ /_/ \  ___/ >    <
 #  |______  /____/|__|____/\____ |  |__|___|  /\____ |\___  >__/\_ \
 #         \/                    \/          \/      \/    \/      \/
-def index_csv_file(reader):
+
+def index_csv_file(reader, index_location):
     headers = None
     schema = Schema()
     index_doc = None
     index_writer = None
-    index_directory = os.path.join(DROP_DIR, str(uuid.uuid4().hex))
+    # index_directory = os.path.join(DROP_DIR, str(uuid.uuid4().hex))
+    index_directory = index_location
 
     if not os.path.exists(index_directory):
         os.makedirs(index_directory)
@@ -158,13 +162,13 @@ def perform_search(headers, index_doc, query):
 
     with index_doc.searcher() as searcher:
         qp = QueryParser(field, schema=index_doc.schema)
-        q = qp.parse(unicode(value))
+        q = qp.parse(unicode(query))
         results = searcher.search(q)
 
         for result in results:
             for header in headers:
                 if header in result:
-                    log.info("%s: %s", header, str(result[header]))
+                    log.info("%s: %s", header, result[header].encode("utf-8"))
                 else:
                     log.info("%s: NA", header)
 
@@ -220,9 +224,28 @@ def iterative_search(headers, index_doc):
 
     return None
 
-def signal_handler(signal, frame):
-    print 'Exiting...'
-    sys.exit(0)
+# def signal_handler(signal, frame):
+#     print 'Exiting...'
+#     sys.exit(0)
+
+def md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+
+    return hash_md5.hexdigest()
+
+
+def get_headers_of_csv(input_csv_file):
+    headers = None
+    with open(input_csv_file, 'rb') as file_pointer:
+        reader = csv.reader(file_pointer)
+        first_row = reader.next()
+        headers = list(first_row)
+
+    return headers
+
 # ___________       __
 # \_   _____/ _____/  |________ ___.__.
 #  |    __)_ /    \   __\_  __ <   |  |
@@ -230,26 +253,52 @@ def signal_handler(signal, frame):
 # /_______  /___|  /__|  |__|   / ____|
 #         \/     \/             \/
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python csv_open.py file_name.csv")
+    if len(sys.argv) != 4:
+        print("Usage: python csv_open.py file_name.csv query comma_seperated_headers")
         sys.exit(1)
 
-    # Signal handler
-    signal.signal(signal.SIGINT, signal_handler)
     setup_logging()
+    input_csv_file = sys.argv[1]
+    raw_query = sys.argv[2]
+    result_headers = sys.argv[3].split(",")
 
-    input_file_name = sys.argv[1]
+    input_csv_file_full_path = os.path.abspath(input_csv_file)
+    file_name_md5 = hashlib.md5(input_csv_file_full_path).hexdigest()
+    file_contents_md5 = md5(input_csv_file_full_path)
+    index_location = os.path.join(DROP_DIR, file_name_md5, file_contents_md5)
+    log.info("Index location is: %s", index_location)
 
     headers = None
-    index_doc = None
-    schema = None
-    with open(input_file_name, 'rb') as file_pointer:
-        reader = csv.reader(file_pointer)
-        (headers, index_doc) = index_csv_file(reader)
+    index_handle = None
+    if os.path.isdir(index_location) and index.exists_in(index_location):
+        log.info("Reusing existing directory: %s", index_location)
+        headers = get_headers_of_csv(input_csv_file)
+        index_handle = index.open_dir(index_location)
+    else:
+        log.info("Indexing to directory: %s", index_location)
+        with open(input_csv_file_full_path, 'rb') as file_pointer:
+            reader = csv.reader(file_pointer)
+            (headers, index_handle) = index_csv_file(reader, index_location)
 
-    iterative_search(headers, index_doc)
+    print("\n\n")
+    with index_handle.searcher() as searcher:
+        qp = QueryParser('default_field', schema=index_handle.schema)
+        q = qp.parse(unicode(raw_query))
+        results = searcher.search(q)
 
-    # Open file
-    # Index all contents
-    # Prompt for query
-    # Fire a query
+        for document in results:
+
+            resp_doc_buffer = []
+
+            for header in result_headers:
+                if header in document:
+                    resp_doc_buffer.append(document[header].encode("utf-8"))
+                    # log.info("%s: %s", header, document[header].encode("utf-8"))
+                else:
+                    # log.info("%s: NA", header)
+                    resp_doc_buffer.append("NA")
+            # log.info("")
+
+            print(",".join(resp_doc_buffer))
+
+        log.info("\nTotal results: %d", len(results))
