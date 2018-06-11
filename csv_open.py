@@ -65,6 +65,7 @@ def add_record(index_writer, headers, row):
 #         \/                    \/          \/      \/    \/      \/
 
 def index_csv_file(reader, index_location):
+    index_timer = Timer()
     headers = None
     schema = Schema()
     index_doc = None
@@ -75,7 +76,6 @@ def index_csv_file(reader, index_location):
     if not os.path.exists(index_directory):
         os.makedirs(index_directory)
 
-    log.info("indexing to directory: %s", index_directory)
     log.info("indexing please wait....")
 
     first_row = reader.next()
@@ -100,7 +100,7 @@ def index_csv_file(reader, index_location):
             if num_documents > 1 and num_documents % 500 == 0:
                 log.info("Added documents: %d", num_documents)
 
-    log.info("Documents added: %d", num_documents)
+    log.info("Documents added: %d, time taken: %s", num_documents, index_timer.end())
     return (headers, index_doc)
 
 
